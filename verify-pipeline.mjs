@@ -15,34 +15,37 @@
  */
 
 import { readFileSync, readdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+const CAREER_OPS = new URL('.', import.meta.url).pathname;
 // Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
+const APPS_FILE = existsSync(join(CAREER_OPS, 'data/leads.md'))
+  ? join(CAREER_OPS, 'data/leads.md')
+  : join(CAREER_OPS, 'leads.md');
 const ADDITIONS_DIR = join(CAREER_OPS, 'batch/tracker-additions');
 const REPORTS_DIR = join(CAREER_OPS, 'reports');
 const STATES_FILE = existsSync(join(CAREER_OPS, 'templates/states.yml'))
   ? join(CAREER_OPS, 'templates/states.yml')
   : join(CAREER_OPS, 'states.yml');
 
-const CANONICAL_STATUSES = [
-  'evaluated', 'applied', 'responded', 'interview',
-  'offer', 'rejected', 'discarded', 'skip',
-];
+  const CANONICAL_STATUSES = [
+    'discovered',
+    'evaluated',
+    'contacted',
+    'replied',
+    'call scheduled',
+    'proposal sent',
+    'won',
+    'lost',
+    'nurture',
+    'disqualified',
+  ];
 
 const ALIASES = {
-  'evaluada': 'evaluated', 'condicional': 'evaluated', 'hold': 'evaluated', 'evaluar': 'evaluated', 'verificar': 'evaluated',
-  'aplicado': 'applied', 'enviada': 'applied', 'aplicada': 'applied', 'applied': 'applied', 'sent': 'applied',
-  'respondido': 'responded',
-  'entrevista': 'interview',
-  'oferta': 'offer',
-  'rechazado': 'rejected', 'rechazada': 'rejected',
-  'descartado': 'discarded', 'descartada': 'discarded', 'cerrada': 'discarded', 'cancelada': 'discarded',
-  'no aplicar': 'skip', 'no_aplicar': 'skip', 'monitor': 'skip', 'geo blocker': 'skip',
+  'enviada': 'aplicado', 'aplicada': 'aplicado', 'applied': 'aplicado', 'sent': 'aplicado',
+  'cerrada': 'descartado', 'descartada': 'descartado', 'cancelada': 'descartado',
+  'rechazada': 'rechazado',
+  'no_aplicar': 'no aplicar', 'skip': 'no aplicar', 'monitor': 'no aplicar',
 };
 
 let errors = 0;
@@ -54,7 +57,7 @@ function ok(msg) { console.log(`✅ ${msg}`); }
 
 // --- Read applications.md ---
 if (!existsSync(APPS_FILE)) {
-  console.log('\n📊 No applications.md found. This is normal for a fresh setup.');
+  console.log('\n📊 No leads.md found. This is normal for a fresh setup.');
   console.log('   The file will be created when you evaluate your first offer.\n');
   process.exit(0);
 }
@@ -65,17 +68,24 @@ const entries = [];
 for (const line of lines) {
   if (!line.startsWith('|')) continue;
   const parts = line.split('|').map(s => s.trim());
-  if (parts.length < 9) continue;
+  if (parts.length < 11) continue;
   const num = parseInt(parts[1]);
   if (isNaN(num)) continue;
   entries.push({
-    num, date: parts[2], company: parts[3], role: parts[4],
-    score: parts[5], status: parts[6], pdf: parts[7], report: parts[8],
-    notes: parts[9] || '',
+    num,
+    date: parts[2],
+    name: parts[3],
+    title: parts[4],
+    company: parts[5],
+    score: parts[6],
+    status: parts[7],
+    email: parts[8],
+    report: parts[9],
+    notes: parts[10] || '',
   });
 }
 
-console.log(`\n📊 Checking ${entries.length} entries in applications.md\n`);
+console.log(`\n📊 Checking ${entries.length} entries in leads.md\n`);
 
 // --- Check 1: Canonical statuses ---
 let badStatuses = 0;
@@ -108,7 +118,7 @@ const companyRoleMap = new Map();
 let dupes = 0;
 for (const e of entries) {
   const key = e.company.toLowerCase().replace(/[^a-z0-9]/g, '') + '::' +
-    e.role.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    e.title.toLowerCase().replace(/[^a-z0-9 ]/g, '');
   if (!companyRoleMap.has(key)) companyRoleMap.set(key, []);
   companyRoleMap.get(key).push(e);
 }
@@ -150,8 +160,8 @@ for (const line of lines) {
   if (!line.startsWith('|')) continue;
   if (line.includes('---') || line.includes('Empresa')) continue;
   const parts = line.split('|');
-  if (parts.length < 9) {
-    error(`Row with <9 columns: ${line.substring(0, 80)}...`);
+  if (parts.length < 11) {
+    error(`Row with <11 columns: ${line.substring(0, 80)}...`);
     badRows++;
   }
 }
