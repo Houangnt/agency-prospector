@@ -1,46 +1,45 @@
-# Modo: pipeline — Inbox de URLs (Second Brain)
+# Mode: pipeline — Prospect URL Inbox (Second Brain)
 
-Procesa URLs de ofertas acumuladas en `data/pipeline.md`. El usuario agrega URLs cuando quiera y luego ejecuta `/career-ops pipeline` para procesarlas todas.
+Process prospect/profile URLs accumulated in `data/pipeline.md`. The user can paste URLs anytime, then run `/investor-ops pipeline` to process them in batch.
 
 ## Workflow
 
-1. **Leer** `data/pipeline.md` → buscar items `- [ ]` en la sección "Pendientes"
+1. **Read** `data/pipeline.md` → find `- [ ]` items in "Pending"
 2. **Para cada URL pendiente**:
    a. Calcular siguiente `REPORT_NUM` secuencial (leer `reports/`, tomar el número más alto + 1)
-   b. **Extraer JD** usando Playwright (browser_navigate + browser_snapshot) → WebFetch → WebSearch
+   b. **Extract prospect context** using Playwright (browser_navigate + browser_snapshot) → WebFetch → WebSearch
    c. Si la URL no es accesible → marcar como `- [!]` con nota y continuar
-   d. **Ejecutar auto-pipeline completo**: Evaluación A-F → Report .md → PDF (si score >= 3.0) → Tracker
-   e. **Mover de "Pendientes" a "Procesadas"**: `- [x] #NNN | URL | Empresa | Rol | Score/5 | PDF ✅/❌`
+   d. **Run auto-pipeline**: Eval (Blocks A–E) → Report .md → Tracker line (TSV) → merge tracker
+   e. **Move from "Pending" to "Processed"**: `- [x] #NNN | URL | Name | Title at Company | Grade | Email ✅/❌`
 3. **Si hay 3+ URLs pendientes**, lanzar agentes en paralelo (Agent tool con `run_in_background`) para maximizar velocidad.
 4. **Al terminar**, mostrar tabla resumen:
 
 ```
-| # | Empresa | Rol | Score | PDF | Acción recomendada |
+| # | Name | Lead | Grade | Email | Recommended action |
 ```
 
-## Formato de pipeline.md
+## `data/pipeline.md` format
 
 ```markdown
-## Pendientes
+## Pending
 - [ ] https://jobs.example.com/posting/123
-- [ ] https://boards.greenhouse.io/company/jobs/456 | Company Inc | Senior PM
-- [!] https://private.url/job — Error: login required
+- [ ] https://www.linkedin.com/in/someone | Name | Title at Company | signal: "snippet..." | score: 11/15
+- [!] https://private.url/profile — Error: login required
 
-## Procesadas
-- [x] #143 | https://jobs.example.com/posting/789 | Acme Corp | AI PM | 4.2/5 | PDF ✅
-- [x] #144 | https://boards.greenhouse.io/xyz/jobs/012 | BigCo | SA | 2.1/5 | PDF ❌
+## Processed
+- [x] #143 | https://www.linkedin.com/in/someone | Name | Title at Company | Grade A | Email ✅
+- [x] #144 | https://x.com/handle/status/123 | Handle | (Tweet signal) | Grade C | Email ❌
 ```
 
-## Detección inteligente de JD desde URL
+## Smart extraction from URL
 
-1. **Playwright (preferido):** `browser_navigate` + `browser_snapshot`. Funciona con todas las SPAs.
-2. **WebFetch (fallback):** Para páginas estáticas o cuando Playwright no está disponible.
-3. **WebSearch (último recurso):** Buscar en portales secundarios que indexan el JD.
+1. **Playwright (preferred):** `browser_navigate` + `browser_snapshot` to read profile/post content.
+2. **WebFetch (fallback):** for static pages or when Playwright isn't available.
+3. **WebSearch (last resort):** for lightweight context and links.
 
-**Casos especiales:**
-- **LinkedIn**: Puede requerir login → marcar `[!]` y pedir al usuario que pegue el texto
-- **PDF**: Si la URL apunta a un PDF, leerlo directamente con Read tool
-- **`local:` prefix**: Leer el archivo local. Ejemplo: `local:jds/linkedin-pm-ai.md` → leer `jds/linkedin-pm-ai.md`
+**Special cases:**
+- **LinkedIn**: may require login → mark `[!]` and ask the user to paste visible text/snippets
+- **`local:` prefix**: read local snapshot. Example: `local:jds/prospect-foo.md` → read `jds/prospect-foo.md`
 
 ## Numeración automática
 
@@ -48,7 +47,7 @@ Procesa URLs de ofertas acumuladas en `data/pipeline.md`. El usuario agrega URLs
 2. Extraer el número del prefijo (e.g., `142-medispend...` → 142)
 3. Nuevo número = máximo encontrado + 1
 
-## Sincronización de fuentes
+## Source sync check
 
 Antes de procesar cualquier URL, verificar sync:
 ```bash
