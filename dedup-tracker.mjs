@@ -10,40 +10,28 @@
  */
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+const CAREER_OPS = new URL('.', import.meta.url).pathname;
 // Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
+const APPS_FILE = existsSync(join(CAREER_OPS, 'data/leads.md'))
+  ? join(CAREER_OPS, 'data/leads.md')
+  : join(CAREER_OPS, 'leads.md');
 const DRY_RUN = process.argv.includes('--dry-run');
 
 // Status advancement order (higher = more advanced in pipeline)
 // Aplicado > Rechazado because active application > terminal state
 const STATUS_RANK = {
-  // English canonicals (states.yml labels)
-  'skip': 0,
-  'discarded': 0,
-  'rejected': 1,
+  'discovered': 1,
   'evaluated': 2,
-  'applied': 3,
-  'responded': 4,
-  'interview': 5,
-  'offer': 6,
-  // Spanish aliases — kept for backwards compat with existing tracker data
-  'no_aplicar': 0,
-  'no aplicar': 0,
-  'descartado': 0,
-  'descartada': 0,
-  'rechazado': 1,  // Terminal — below active states
-  'rechazada': 1,
-  'evaluada': 2,
-  'aplicado': 3,
-  'respondido': 4,
-  'entrevista': 5,
-  'oferta': 6,
+  'contacted': 3,
+  'replied': 4,
+  'call scheduled': 5,
+  'proposal sent': 6,
+  'won': 7,
+  'lost': 0,
+  'nurture': 1,
+  'disqualified': 0,
 };
 
 function normalizeCompany(name) {
@@ -76,19 +64,23 @@ function parseScore(s) {
 
 function parseAppLine(line) {
   const parts = line.split('|').map(s => s.trim());
-  if (parts.length < 9) return null;
+
+  if (parts.length < 11) return null;
+
   const num = parseInt(parts[1]);
-  if (isNaN(num)) return null;
+  if (isNaN(num) || num === 0) return null;
+
   return {
     num,
     date: parts[2],
-    company: parts[3],
-    role: parts[4],
-    score: parts[5],
-    status: parts[6],
-    pdf: parts[7],
-    report: parts[8],
-    notes: parts[9] || '',
+    name: parts[3],
+    title: parts[4],
+    company: parts[5],
+    score: parts[6],
+    status: parts[7],
+    email_drafted: parts[8],
+    report: parts[9],
+    notes: parts[10] || '',
     raw: line,
   };
 }
@@ -140,7 +132,7 @@ for (const [company, companyEntries] of groups) {
 
     for (let j = i + 1; j < companyEntries.length; j++) {
       if (processed.has(j)) continue;
-      if (roleMatch(companyEntries[i].role, companyEntries[j].role)) {
+      if (roleMatch(companyEntries[i].title, companyEntries[j].title)) {
         cluster.push(companyEntries[j]);
         processed.add(j);
       }
@@ -181,7 +173,7 @@ for (const [company, companyEntries] of groups) {
       if (lineIdx !== undefined) {
         linesToRemove.add(lineIdx);
         removed++;
-        console.log(`🗑️  Remove #${dup.num} (${dup.company} — ${dup.role}, ${dup.score}) → kept #${keeper.num} (${keeper.score})`);
+        console.log(`🗑️  Remove #${dup.num} (${dup.name} — ${dup.title} at ${dup.company}, ${dup.score}) → kept #${keeper.num} (${keeper.score})`);
       }
     }
   }
