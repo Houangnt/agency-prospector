@@ -15,21 +15,31 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, existsSync } from 'fs';
-import { join, basename, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join, basename } from 'path';
 
-const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
+const CAREER_OPS = new URL('.', import.meta.url).pathname;
 // Support both layouts: data/applications.md (boilerplate) and applications.md (original)
-const APPS_FILE = existsSync(join(CAREER_OPS, 'data/applications.md'))
-  ? join(CAREER_OPS, 'data/applications.md')
-  : join(CAREER_OPS, 'applications.md');
+const APPS_FILE = existsSync(join(CAREER_OPS, 'data/leads.md'))
+  ? join(CAREER_OPS, 'data/leads.md')
+  : join(CAREER_OPS, 'leads.md');
 const ADDITIONS_DIR = join(CAREER_OPS, 'batch/tracker-additions');
 const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
 const DRY_RUN = process.argv.includes('--dry-run');
 const VERIFY = process.argv.includes('--verify');
 
 // Canonical states and aliases
-const CANONICAL_STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Rejected', 'Discarded', 'SKIP'];
+const CANONICAL_STATES = [
+  'Discovered',
+  'Evaluated',
+  'Contacted',
+  'Replied',
+  'Call scheduled',
+  'Proposal sent',
+  'Won',
+  'Lost',
+  'Nurture',
+  'Disqualified',
+];
 
 function validateStatus(status) {
   const clean = status.replace(/\*\*/g, '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
@@ -41,22 +51,19 @@ function validateStatus(status) {
 
   // Aliases
   const aliases = {
-    // Spanish → English
-    'evaluada': 'Evaluated', 'condicional': 'Evaluated', 'hold': 'Evaluated', 'evaluar': 'Evaluated', 'verificar': 'Evaluated',
-    'aplicado': 'Applied', 'enviada': 'Applied', 'aplicada': 'Applied', 'applied': 'Applied', 'sent': 'Applied',
-    'respondido': 'Responded',
-    'entrevista': 'Interview',
-    'oferta': 'Offer',
-    'rechazado': 'Rejected', 'rechazada': 'Rejected',
-    'descartado': 'Discarded', 'descartada': 'Discarded', 'cerrada': 'Discarded', 'cancelada': 'Discarded',
-    'no aplicar': 'SKIP', 'no_aplicar': 'SKIP', 'skip': 'SKIP', 'monitor': 'SKIP',
-    'geo blocker': 'SKIP',
+    'evaluated': 'Evaluated',
+    'contacted': 'Contacted',
+    'replied': 'Replied',
+    'call': 'Call scheduled',
+    'proposal': 'Proposal sent',
+    'won': 'Won',
+    'lost': 'Lost',
   };
 
   if (aliases[lower]) return aliases[lower];
 
-  // DUPLICADO/Repost → Discarded
-  if (/^(duplicado|dup|repost)/i.test(lower)) return 'Discarded';
+  // DUPLICADO/Repost → Descartado
+  if (/^(duplicado|dup|repost)/i.test(lower)) return 'Descartado';
 
   console.warn(`⚠️  Non-canonical status "${status}" → defaulting to "Evaluated"`);
   return 'Evaluated';
@@ -83,15 +90,30 @@ function parseScore(s) {
   return m ? parseFloat(m[1]) : 0;
 }
 
+function extractCompany(titleStr) {
+  const match = titleStr.match(/at (.+)$/i);
+  return match ? match[1].trim() : '';
+}
 function parseAppLine(line) {
   const parts = line.split('|').map(s => s.trim());
-  if (parts.length < 9) return null;
+
+  if (parts.length < 11) return null;
+
   const num = parseInt(parts[1]);
   if (isNaN(num) || num === 0) return null;
+
   return {
-    num, date: parts[2], company: parts[3], role: parts[4],
-    score: parts[5], status: parts[6], pdf: parts[7], report: parts[8],
-    notes: parts[9] || '', raw: line,
+    num,
+    date: parts[2],
+    name: parts[3],
+    title: parts[4],
+    company: parts[5],
+    score: parts[6],
+    status: parts[7],
+    email_drafted: parts[8],
+    report: parts[9],
+    notes: parts[10] || '',
+    raw: line,
   };
 }
 
@@ -117,11 +139,12 @@ function parseTsvContent(content, filename) {
     addition = {
       num: parseInt(parts[0]),
       date: parts[1],
-      company: parts[2],
-      role: parts[3],
-      score: parts[4],
-      status: validateStatus(parts[5]),
-      pdf: parts[6],
+      name: parts[2],
+      title: parts[3],
+      company: extractCompany(parts[3]), // từ "Founder at X"
+      score: parts[5],
+      status: validateStatus(parts[4]),
+      email_drafted: parts[6],
       report: parts[7],
       notes: parts[8] || '',
     };
@@ -139,8 +162,8 @@ function parseTsvContent(content, filename) {
     const col5 = parts[5].trim();
     const col4LooksLikeScore = /^\d+\.?\d*\/5$/.test(col4) || col4 === 'N/A' || col4 === 'DUP';
     const col5LooksLikeScore = /^\d+\.?\d*\/5$/.test(col5) || col5 === 'N/A' || col5 === 'DUP';
-    const col4LooksLikeStatus = /^(evaluated|applied|responded|interview|offer|rejected|discarded|skip|evaluada|aplicado|respondido|entrevista|oferta|rechazado|descartado|no aplicar|cerrada|duplicado|repost|condicional|hold|monitor)/i.test(col4);
-    const col5LooksLikeStatus = /^(evaluated|applied|responded|interview|offer|rejected|discarded|skip|evaluada|aplicado|respondido|entrevista|oferta|rechazado|descartado|no aplicar|cerrada|duplicado|repost|condicional|hold|monitor)/i.test(col5);
+    const col4LooksLikeStatus = /^(evaluada|aplicado|respondido|entrevista|oferta|rechazado|descartado|no aplicar|cerrada|duplicado|repost|condicional|hold|monitor)/i.test(col4);
+    const col5LooksLikeStatus = /^(evaluada|aplicado|respondido|entrevista|oferta|rechazado|descartado|no aplicar|cerrada|duplicado|repost|condicional|hold|monitor)/i.test(col5);
 
     let statusCol, scoreCol;
     if (col4LooksLikeStatus && !col4LooksLikeScore) {
@@ -160,11 +183,12 @@ function parseTsvContent(content, filename) {
     addition = {
       num: parseInt(parts[0]),
       date: parts[1],
-      company: parts[2],
-      role: parts[3],
-      status: validateStatus(statusCol),
+      name: parts[2],
+      title: parts[3],
+      company: extractCompany(parts[3]), // từ "Founder at X"
       score: scoreCol,
-      pdf: parts[6],
+      status: validateStatus(statusCol),
+      email_drafted: parts[6],
       report: parts[7],
       notes: parts[8] || '',
     };
@@ -257,7 +281,7 @@ for (const file of tsvFiles) {
     const normCompany = normalizeCompany(addition.company);
     duplicate = existingApps.find(app => {
       if (normalizeCompany(app.company) !== normCompany) return false;
-      return roleFuzzyMatch(addition.role, app.role);
+      return roleFuzzyMatch(addition.title, app.title);
     });
   }
 
@@ -266,15 +290,15 @@ for (const file of tsvFiles) {
     const oldScore = parseScore(duplicate.score);
 
     if (newScore > oldScore) {
-      console.log(`🔄 Update: #${duplicate.num} ${addition.company} — ${addition.role} (${oldScore}→${newScore})`);
+      console.log(`🔄 Update: #${duplicate.num} ${addition.name} — ${addition.title} at ${addition.company} (${oldScore}→${newScore})`);
       const lineIdx = appLines.indexOf(duplicate.raw);
       if (lineIdx >= 0) {
-        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${duplicate.status} | ${duplicate.pdf} | ${addition.report} | Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes} |`;
+        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.name} | ${addition.title} | ${addition.company} | ${addition.score} | ${duplicate.status} | ${duplicate.email_drafted} | ${addition.report} | ${addition.notes} |`;
         appLines[lineIdx] = updatedLine;
         updated++;
       }
     } else {
-      console.log(`⏭️  Skip: ${addition.company} — ${addition.role} (existing #${duplicate.num} ${oldScore} >= new ${newScore})`);
+      console.log(`⏭️  Skip: ${addition.name} — ${addition.title} at ${addition.company} (existing #${duplicate.num} ${oldScore} >= new ${newScore})`);
       skipped++;
     }
   } else {
@@ -282,10 +306,10 @@ for (const file of tsvFiles) {
     const entryNum = addition.num > maxNum ? addition.num : ++maxNum;
     if (addition.num > maxNum) maxNum = addition.num;
 
-    const newLine = `| ${entryNum} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${addition.status} | ${addition.pdf} | ${addition.report} | ${addition.notes} |`;
+    const newLine = `| ${entryNum} | ${addition.date} | ${addition.name} | ${addition.title} | ${addition.company} | ${addition.score} | ${addition.status} | ${addition.email_drafted} | ${addition.report} | ${addition.notes} |`;
     newLines.push(newLine);
     added++;
-    console.log(`➕ Add #${entryNum}: ${addition.company} — ${addition.role} (${addition.score})`);
+    console.log(`➕ Add #${entryNum}: ${addition.name} — ${addition.title} at ${addition.company} (${addition.score})`);
   }
 }
 
